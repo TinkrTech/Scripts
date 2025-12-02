@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+cd ~/Code/tv-tracker/
+
+uv run src/main.py "$@"

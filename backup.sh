@@ -1,11 +1,20 @@
 #!/usr/bin/env bash
 # A script to incrementally backup to local and remote destinations
 
+usage() {
+	echo "Usage: $0 [options]"
+	echo "Options:"
+	echo "-d, --dry-run	Show what the results of the operation would be"
+	echo "-h, --help	Show this message"
+	echo "See Also:"
+	echo "restore.sh"
+}
+
 shopt -s globstar extglob nullglob 
 
 DRY_RUN=false
 printf -v TIMESTAMP "%(%F-%H%M)T" -1 # yyyy-mm-dd-HHMM
-LOG_DIR="/etc/logs/backup-sh/$timestamp.log"
+LOG_FILE="/var/log/backup-sh/$TIMESTAMP.log"
 
 sources=(
 	/home/jade/{.config,Scripts}
@@ -28,28 +37,15 @@ exclude_patterns=(
 	".config/session"
 )
 
-local_base_dest="/mnt/data/Backup"
-remote_base_dest="/mnt/vanasa/Jade/0 - Backup"
-
-
-usage() {
-	echo "Usage: $0 [options]"
-	echo "Options:"
-	echo "-d, --dry-run	Show what the results of the operation would be"
-	echo "-h, --help	Show this message"
-	echo "See Also:"
-	echo "restore.sh"
-}
+local_dest="/mnt/data/Backup"
+remote_dest="vanasa@10.0.0.99:/mnt/vdev1/Shared/Jade/Backup"
 
 get-args() {
 	getopt -T
-	if (( $? != 4 )); then 
-		echo >&2 "Incompatible version of 'getopt', exiting..."; exit 2
-	fi
+	(( $? == 4 )) || (echo >&2 "Incompatible version of 'getopt', exiting..."; exit 2)
 	
 	params="$(getopt -o dh -l dry-run,help --name="$0" -- "$@")"
-
-	(( "$?" == 0 )) || (usage; exit 2)
+	(( $? == 0 )) || (usage; exit 2)
 	
 	eval set -- "$params"
 
@@ -65,34 +61,49 @@ get-args() {
 	done
 }
 
-main() {	
-	local dry_run=
-	if $DRY_RUN; then
-		local dry_run="--dry-run"
-	fi
+sync-to-dest() {
+	local dest_parent="$1"; shift
+	local dest="$dest_parent/$TIMESTAMP" 
+	
+	local passthru_args=( "$@" )	
 
-	local local_dest="$local_base_dest/$TIMESTAMP"
-
-	local previous=$(ls "$local_base_dest" -1 | tail -1)
+	local latest_backup=$(rsync "$dest_parent/" | tail -1 | awk '{print $5}')
 	local link_dest=
-	if [[ -n "${previous}" ]]; then
-		local link_dest="--link-dest='$previous'"
+	if [[ "$latest_backup" != '.' ]]; then
+		local dest_hostless="${dest_parent#*:}"
+		link_dest="--link-dest=$dest_hostless/$latest_backup"
 	fi
 
+	local dry_run=
+	if $DRY_RUN; then 
+		dry_run="--dry-run"
+	fi
+	
+	echo "$link_dest ${passthru_args[@]}"
 	local path
 	for path in "${sources[@]}"; do
-		# archive, verbose, human-readable, relative, compress
-		rsync -avhRz $dry_run  \
+		# human-readable, archive, compress, relative
+		rsync -hazRv $dry_run  \
 			--delete \
+			${passthru_args[@]} \
 			$link_dest \
 			--exclude-from=<(printf '%s\n' "${exclude_patterns[@]}") \
-			"${path%%+(/)}" \
-			"$local_dest"
+			"$path" \
+			"$dest"
 	done
+}
+
+main() {
+	sync-to-dest "$local_dest"
 	
-	# rsync $flags -avh "${local_dest%%+(/)}" "$remote_dest"
+	# Note: Since these happen at different points in time they may not be mutually in sync.
+	sync-to-dest "$remote_dest" --no-perms
 }
 
 get-args "$@"
-echo $TIMESTAMP
-main
+
+if ! $DRY_RUN; then
+	main 2>&1 | tee "$LOG_FILE"
+else
+	main
+fi

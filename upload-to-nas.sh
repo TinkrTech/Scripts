@@ -3,13 +3,24 @@
 #   Uses dmenu for prompting
 # Takes source-path as a parameter
 
-shopt -s nullglob
-shopt -s globstar
-shopt -s extglob
+shopt -s nullglob globstar extglob
 
 EPISODE_PATTERN="[sS]([0-9]+)[eE]([0-9]+)"
-VERBOSE=
-DRY_RUN=
+VERBOSE=true
+DRY_RUN=false
+MEDIA_TYPE=
+MEDIA_NAME=
+ARGS=( )
+
+usage() {
+	echo "Usage: $0 [options] SOURCE"
+	echo "Options:"
+	echo "-n, --name NAME  The name of the media that is being moved."
+	echo "-t, --type TYPE  What type of media is being moved. One of: show, movie"
+	echo "-q, --quiet      Disable commandline output"
+	echo "-d, --dry-run    Show what will happen without causing changes. Overrides -q/--quiet"
+	echo "-h, --help       Show this message."
+}
 
 filter_video_files() {
 	local path=$1
@@ -87,42 +98,113 @@ spin-until-done() {
 	echo "Done"	
 }
 
+parse-args() {
+	getopt -T
+	if (( $? != 4 )); then
+		echo >&2 "Incompatible version of 'getopt', falling back to dmenu..."; exit 1
+	fi
+	
+	params="$(getopt -o t:n:qdh -l type:,name:,quiet,dry-run,--help --name "$0" -- "$@")"
+	
+	if (( $? != 0 )); then
+		usage; exit 2
+	fi
+	
+	eval set -- "$params"
+	
+	while (( $# > 0 )); do
+		case "$1" in
+			-t|--type)
+				if [[ "${2,,}" =~ (movie|show) ]]; then
+					MEDIA_TYPE="${2,,}"
+				else
+					echo >&2 "Invalid type '$2'. Must be either 'show' or 'movie'"; exit 2
+				fi
+				shift 2;;
+			-n|--name)
+				MEDIA_NAME="$2"
+				shift 2;;
+			-q|--quiet)
+				if ! $DRY_RUN; then
+					VERBOSE=false
+				fi
+				shift 1;;
+			-d|--dry-run)
+				DRY_RUN=true
+				VERBOSE=true
+				shift 1;;
+			-h|--help)
+				usage; exit 1;;
+			--)
+				shift; break;;
+			esac
+	done
+	
+	ARGS=( "$@" ) # Return any remaining args (should be positional args)
+}
+
+interactive-args() {
+	if [[ -z "$MEDIA_TYPE" ]]; then
+		TYPE=$(echo -e "Show\nMovie" | dmenu -l 2 -i -p "Select Media Type")
+		MEDIA_TYPE="${TYPE,,}"
+		[[ -n "$MEDIA_TYPE" ]] || exit 1 
+	fi
+
+	if [[ -z "$MEDIA_NAME" ]]; then
+		MEDIA_NAME=$(echo "" | dmenu -p "$MEDIA_TYPE name: " <&-)
+		[[ -n $MEDIA_NAME ]] || exit 1
+	fi
+	
+	# Todo: Introduce --interactive flag
+	if [[ "$INTERACTIVE" ]]; then
+		local mode=$(echo -e "Default\nDry-Run\nQuiet" | dmenu -l 3 -i -p "Select mode")
+		[[ -n $mode ]] || exit 1
+	-d, --dry-run		Show what will happen without causing changes. Overrides -q/--q
+		case "$mode" in
+			Default)
+				DRY_RUN=false;
+				VERBOSE=true;;
+			Quiet) 
+				DRY_RUN=false;
+				VERBOSE=false;;
+			Dry-Run)
+				DRY_RUN=true;
+				VERBOSE=true;;
+		esac
+	fi
+}
+
 main() {
 	local src_path=${1%%+(/)} # Trim trailing /
 	
-	echo "src_path=$src_path"
-	local media_type=$(echo -e "Show\nMovie" | dmenu -l 2 -i -p "Select Media Type")
-	[[ -n $media_type ]] || exit 1 
-	
-	local media_name=$(echo "" | dmenu -p "$media_type name: " <&-)
-	[[ -n $media_name ]] || exit 1
+	if [[ -z "$src_path" ]]; then
+		echo >&2 "Invalid source path. (Was either empty or /)"; exit 2
+	fi
+	if $VERBOSE; then
+		echo "Uploading $MEDIA_TYPE '$MEDIA_NAME' from '$src_path'"
+		echo "dry-run=$DRY_RUN"
+		echo
+	fi
 
-	local mode=$(echo -e "Default\nDry-Run\nVerbose" | dmenu -l 3 -i -p "Select mode")
-	[[ -n $mode ]] || exit 1
-	
-	case "$mode" in
-		Default) 
-			DRY_RUN=false;
-			VERBOSE=false;;
-		Dry-Run)
-			DRY_RUN=true;
-			VERBOSE=true;;
-		Verbose)
-			DRY_RUN=false;
-			VERBOSE=true;;
-	esac
-	
 	if ! $DRY_RUN; then mount-nfs.sh; fi
-
-	case "$media_type" in
-		Show)  process-show "$src_path" "$media_name";;
-		Movie) process-movie "$src_path" "$media_name";;
+	
+	case "$MEDIA_TYPE" in
+		show)  process-show "$src_path" "$MEDIA_NAME";;
+		movie) process-movie "$src_path" "$MEDIA_NAME";;
 	esac
-
 }
 
 if [[ -z "${1%%+(/)}" ]]; then
-	echo "Missing source path - Usage: $0 <path>" >&2; exit 1
+	echo "Missing source path" >&2; exit 1
 fi
 
-main $@
+
+
+parse-args "$@" || exit $?
+if (( ${#ARGS[@]} != 1 )); then
+	echo >&2 "Expected 1 positional arg got ${#ARGS[@]}. Args were: ${ARGS[@]}"
+	echo
+	usage; exit 2
+fi
+interactive-args || exit $?
+main "$ARGS"

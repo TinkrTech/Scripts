@@ -13,13 +13,15 @@ MEDIA_NAME=
 ARGS=( )
 
 usage() {
-	echo "Usage: $0 [options] SOURCE"
-	echo "Options:"
-	echo "-n, --name NAME  The name of the media that is being moved."
-	echo "-t, --type TYPE  What type of media is being moved. One of: show, movie"
-	echo "-q, --quiet      Disable commandline output"
-	echo "-d, --dry-run    Show what will happen without causing changes. Overrides -q/--quiet"
-	echo "-h, --help       Show this message."
+	cat <<-EOF
+	Usage: ${0##*/} [options] SOURCE
+	Options:
+	 -d, --dry-run    Show what will happen without causing changes. Overrides -q/--quiet
+	 -h, --help       Show this message.
+	 -n, --name NAME  The name of the media that is being moved.
+	 -t, --type TYPE  What type of media is being moved. One of: show, movie
+	 -q, --quiet      Disable commandline output
+	EOF
 }
 
 filter_video_files() {
@@ -84,18 +86,6 @@ process-movie() {
 	local src_path="$1"
 	local name="$2"
 	local dest_path="/mnt/jellyfin/Movies"
-}
-
-spin-until-done() {
-	local spinner=( '|' '/' '-' '\\' )
-	local i=0
-	
-	while [[ -n $(ps --ppid $$ -o cmd | rg -v "ps|rg") ]]; do
-		echo -ne "\rUploading Files...${spinner[i]}"
-		i=$(( (i+1) % "${#spinner[@]}" ))
-		sleep 0.15
-	done
-	echo "Done"	
 }
 
 parse-args() {

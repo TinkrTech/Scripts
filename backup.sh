@@ -2,12 +2,14 @@
 # A script to incrementally backup to local and remote destinations
 
 usage() {
-	echo "Usage: $0 [options]"
-	echo "Options:"
-	echo "-d, --dry-run	Show what the results of the operation would be"
-	echo "-h, --help	Show this message"
-	echo "See Also:"
-	echo "restore.sh"
+	cat <<-EOF
+	Usage: ${0##*/} [options]
+	Options:
+	 -d, --dry-run  Show what the results of the operation would be
+	 -h, --help     Show this message
+	See Also:
+	 restore.sh
+	EOF
 }
 
 shopt -s globstar extglob nullglob 
@@ -35,6 +37,7 @@ exclude_patterns=(
 	".config/**/*.log.*"
 	".config/libreoffice"
 	".config/session"
+	".config/chromium"
 )
 
 local_dest="/mnt/data/Backup"

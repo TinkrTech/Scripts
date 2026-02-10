@@ -38,6 +38,8 @@ exclude_patterns=(
 	".config/libreoffice"
 	".config/session"
 	".config/chromium"
+	".config/transmission/torrents"
+	".config/transmission/resume"
 )
 
 local_dest="/mnt/data/Backup"

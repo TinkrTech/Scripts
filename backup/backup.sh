@@ -71,16 +71,17 @@ get-args() {
 	done
 }
 
-get-latest-in-series() {
-	local dest_parent="$1"
-	local latest_backup=$(rsync "$dest_parent/" | awk '{print $5}' | grep -E "${SERIES:+$SERIES.}[0-9]{4}" | tail -1)
+get-link-dest() {	
+	local -n link_dest_="$1"
+	local dest_parent="$2"
+	local series_backups
+	list-backups series_backups "$dest_parent" "$SERIES"
 
-	local link_dest=
-	if [[ "$latest_backup" != '' ]]; then
+	if (( "${#series_backups[@]}" != 0 )); then
 		local dest_hostless="${dest_parent#*:}"
-		link_dest="--link-dest=$dest_hostless/$latest_backup"
+		link_dest_="--link-dest=$dest_hostless/${series_backups[0]}"
 	fi
-	echo "$link_dest"
+	echo "link_dest=${link_dest_:-<unset>}"
 }
 
 sync-to-dest() {
@@ -90,8 +91,8 @@ sync-to-dest() {
 	local dest="$dest_parent/${SERIES:+$SERIES.}$TIMESTAMP"
 	
 	local passthru_args=( "$@" )
-	local link_dest="$(get-latest-in-series "$dest_parent")"
-	echo "${link_dest}"
+	local link_dest
+	get-link-dest link_dest "$dest_parent"
 
 	local dry_run=
 	if $DRY_RUN; then 

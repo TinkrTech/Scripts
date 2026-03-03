@@ -5,8 +5,10 @@ usage() {
 	cat <<-EOF
 	Usage: ${0##*/} [options]
 	Options:
-	 -d, --dry-run  Show what the results of the operation would be
-	 -h, --help     Show this message
+	 -d, --dry-run        Show what the results of the operation would be
+	 -h, --help           Show this message
+	 -s, --series SERIES  Use previous backups with this series as the reference point. 
+	                      Backups look like SERIES.TIMESTAMP
 	See Also:
 	 restore.sh
 	EOF
@@ -14,9 +16,13 @@ usage() {
 
 shopt -s globstar extglob nullglob 
 
-DRY_RUN=false
-printf -v TIMESTAMP "%(%F-%H%M)T" -1 # yyyy-mm-dd-HHMM
+cd "${0%/*}"
+source constants.sh
+printf -v TIMESTAMP "$TIME_FORMAT" -1 
 LOG_FILE="/var/log/backup-sh/$TIMESTAMP.log"
+
+DRY_RUN=false
+TYPE=
 
 sources=(
 	/home/jade/{.config,Scripts}
@@ -42,49 +48,56 @@ exclude_patterns=(
 	".config/transmission/resume"
 )
 
-local_dest="/mnt/data/Backup"
-remote_dest="vanasa@10.0.0.99:/mnt/vdev1/Shared/Jade/Backup"
-
 get-args() {
 	getopt -T
-	(( $? == 4 )) || (echo >&2 "Incompatible version of 'getopt', exiting..."; exit 2)
+	if (( $? != 4 )); then
+		echo >&2 "Incompatible version of 'getopt', exiting..."; exit 2 
+	fi
 	
-	params="$(getopt -o dh -l dry-run,help --name="$0" -- "$@")"
-	(( $? == 0 )) || (usage; exit 2)
+	params="$(getopt -o dhs: -l dry-run,help,series: --name="$0" -- "$@")"
+	if (( $? != 0 )); then
+		usage; exit 2
+	fi
 	
 	eval set -- "$params"
 
 	while (( $# > 0 )); do
 		case "$1" in
-			-d|--dry-run)
-				DRY_RUN=true; shift;;
-			-h|--help)
-				usage; exit 0;;
-			--)
-				shift;;
+			-d|--dry-run) DRY_RUN=true; shift;;
+			-h|--help) usage; exit 1;;
+			-s|--series) SERIES="${2,,}"; shift 2;; 
+			--) shift;;
 		esac
 	done
 }
 
-sync-to-dest() {
-	local dest_parent="$1"; shift
-	local dest="$dest_parent/$TIMESTAMP" 
-	
-	local passthru_args=( "$@" )	
+get-latest-in-series() {
+	local dest_parent="$1"
+	local latest_backup=$(rsync "$dest_parent/" | awk '{print $5}' | grep -E "${SERIES:+$SERIES.}[0-9]{4}" | tail -1)
 
-	local latest_backup=$(rsync "$dest_parent/" | tail -1 | awk '{print $5}')
 	local link_dest=
-	if [[ "$latest_backup" != '.' ]]; then
+	if [[ "$latest_backup" != '' ]]; then
 		local dest_hostless="${dest_parent#*:}"
 		link_dest="--link-dest=$dest_hostless/$latest_backup"
 	fi
+	echo "$link_dest"
+}
+
+sync-to-dest() {
+	echo "Backing up to '$1'${SERIES:+ with series \'$SERIES\'}"
+	
+	local dest_parent="$1"; shift
+	local dest="$dest_parent/${SERIES:+$SERIES.}$TIMESTAMP"
+	
+	local passthru_args=( "$@" )
+	local link_dest="$(get-latest-in-series "$dest_parent")"
+	echo "${link_dest}"
 
 	local dry_run=
 	if $DRY_RUN; then 
 		dry_run="--dry-run"
 	fi
 	
-	echo "$link_dest ${passthru_args[@]}"
 	local path
 	for path in "${sources[@]}"; do
 		# human-readable, archive, compress, relative
@@ -96,16 +109,25 @@ sync-to-dest() {
 			"$path" \
 			"$dest"
 	done
+	echo
 }
 
 main() {
-	sync-to-dest "$local_dest"
-	
 	# Note: Since these happen at different points in time they may not be mutually in sync.
-	sync-to-dest "$remote_dest" --no-perms
+	
+	local location
+	for location in "${LOCALS[@]}"; do
+		sync-to-dest "$location"
+	done
+	
+	echo
+
+	for location in "${REMOTES[@]}"; do	
+		sync-to-dest "$location" --no-perms
+	done
 }
 
-get-args "$@"
+get-args "$@" || exit $(( $? - 1 ))
 
 if ! $DRY_RUN; then
 	main 2>&1 | tee "$LOG_FILE"

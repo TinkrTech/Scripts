@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 
-TIME_FORMAT="%(%F-%H%M)T"
+TIME_FORMAT="%(%F-%H%M)T" # yyyy-mm-dd-HHMM 
 declare -A PREFIXES
 PREFIXES=(
-	[adHoc]=""
+	[ad-hoc]=""
 	[daily]="daily."
 	[weekly]="weekly."
 	[monthly]="monthly."
 )
 
 LOCALS=( 
-	"/mnt/data/backup"
+	"/mnt/data/Backup"
 )
 
 REMOTES=(

@@ -24,10 +24,12 @@ usage() {
 	EOF
 }
 
-filter_video_files() {
-	local path=$1
+filter-video-files() {
+	find "$1" -type f -iname "*.mkv" -or -iname "*.mp4" -or -iname "*.m4a" | sort
+}
 
-	echo "$path"/*.@(mkv|mp4|m4a)
+filter-subtitle-files() {
+	find "$1" -type f -iname "*.srt" -or -iname "*.ass" -or -iname "*.ssa" | sort
 }
 
 copy-and-chown() {
@@ -45,17 +47,41 @@ copy-and-chown() {
 
 track-show() {
 	local name="$1"
-	[[ -n "$(tv-tracker list "$name" -s)" ]] && return 0
-	echo "Warning: '$name' was not yet tracked. Automatically adding..."
-	# Todo: Find a way to do this interactively with dmenu - Pipes?
-	tv-tracker track "'$name'" -q
+	if [[ -z "$(tv-tracker list "$name")" ]]; then
+		echo "Warning: '$name' was not yet tracked. Adding it now..."
+		tv-tracker track "$name"
+	fi
+}
+
+get-show-folder(){
+	# For some reason this function causes everything to break and output wrong. I don't understand why.
+	local partial_name="$1"
+	local results
+
+	readarray -t results <<< $(tv-tracker info "$partial_name" --fields "year" "title" --format="tsv")
+	if (( "${#results[@]}" == 0)); then
+		echo >&2 "Error: Expected to match '$partial_name' but didn't??. Aborting..."; exit 1
+	elif (( "${#results[@]}" > 1 )); then
+		# Print results and ask user to select which one
+		echo >&2 "Not Implemented! Too many hits for '$partial_name'. Aborting..."; exit 1
+	fi
+
+	#local year="$(echo "${results[0]}" | cut -f 1)"
+	local name="$(echo "${results[0]}" | cut -f 2)"
+	echo "$name"
 }
 
 process-show() {
 	local src_path="$1"
 	local name="$2"
 	local dest_path="/mnt/jellyfin/Shows"
-
+	local video_files=( )
+	
+	readarray -t video_files <<< $(filter-video-files "$src_path")
+	if (( "${#video_files[@]}" == 0 )); then
+		echo "WARNING: No video files were found..."
+	fi
+	
 	# Make associative array of episode names indexed by season-number,episode-number
 	# This should be a function (grumble grumble grumble)
 	track-show "$name"
@@ -67,9 +93,9 @@ process-show() {
 		local s="${BASH_REMATCH[1]}"
 		local e="${BASH_REMATCH[2]}"
 		episodes[$s,$e]="${episode_name}"
-	done
-	
-	for file in $(filter_video_files $src_path); do
+	done	
+
+	for file in "${video_files[@]}"; do
 		if ! [[ $file =~ $EPISODE_PATTERN ]]; then
 			echo "INFO: $file doesn't have a Season / Episode. Skipping..."; continue
 		fi
@@ -79,7 +105,7 @@ process-show() {
 		local ext="${file##*.}"
 		local dest="$dest_path/$name/Season ${s##0}/${episodes[$s,$e]}.$ext"
 		copy-and-chown "$file" "$dest"
-	done
+	done	
 }
 
 process-movie() {

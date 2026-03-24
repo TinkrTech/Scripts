@@ -10,7 +10,7 @@ usage() {
 	 -s, --series SERIES  Use previous backups with this series as the reference point. 
 	                      Backups look like SERIES.TIMESTAMP
 	See Also:
-	 restore.sh
+	 restore.sh, rotate.sh
 	EOF
 }
 
@@ -46,6 +46,7 @@ exclude_patterns=(
 	".config/chromium"
 	".config/transmission/torrents"
 	".config/transmission/resume"
+	".config/Proton Mail"
 )
 
 get-args() {

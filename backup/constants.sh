@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-TIME_FORMAT="%(%F-%H%M)T" # yyyy-mm-dd-HHMM 
+printf -v TIMESTAMP "%(%F-%H%M)T" -1 # yyyy-mm-dd-HHMM 
 TIME_RE='[0-9]{4}-[0-9]{2}-[0-9]{2}-[0-9]{4}'
 
 LOCALS=( 
@@ -19,9 +19,9 @@ list-backups() {
 	local location="${2%%/}"	
 	local series
 	if (( $# >= 3 )); then
-		series=$3
+		series="$3"
 	fi
 	series="${series:+$series.}"
-	readarray -t backups_ <<< $(rsync "$location/" | awk '{print $5}' | egrep "${series}$TIME_RE" | sort -r)
+	readarray -t backups_ < <(rsync "$location/" | awk '{print $5}' | grep -E "^${series}$TIME_RE$" | sort -r)
 }
 

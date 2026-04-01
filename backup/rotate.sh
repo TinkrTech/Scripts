@@ -5,7 +5,7 @@
 
 shopt -s globstar extglob nullglob
 
-cd "${0%/*}" # Normalize working directory
+cd "${0%/*}" || exit 2 # Normalize working directory
 source constants.sh
 
 rotate() {
@@ -21,15 +21,15 @@ rotate() {
 		daily) keep_count=7;;
 		weekly) keep_count=4;;
 		monthly) keep_count=6;;
-		*) echo >&2 "Unrecognized backup type '$backup_type'. Aborting..."; exit 1;;
+		*) echo >&2 "Unrecognized backup type '$series'. Aborting..."; exit 1;;
 	esac
 	
 	# The list of matching backups in reverse chronological order	
 	local matching 
-	list-backups matching "$location" "$series"
+	list-backups matching "$location" "$series" || exit 1
 
 	local delete_count=$(( "${#matching[@]}" - keep_count))
-	if (( $delete_count < 0 )); then
+	if (( delete_count < 0 )); then
 		echo "  $series - [Nothing to delete]"
 		return
 	fi
@@ -38,7 +38,7 @@ rotate() {
 	
 	# Do the deletions here
 	local item
-	for item in ${to_delete[@]}; do
+	for item in "${to_delete[@]}"; do
 		item="$location/${item%%/}"
 		if [[ -z "${item%%/}" ]]; then
 			echo "WARNING: item to be deleted was empty. Skipping"

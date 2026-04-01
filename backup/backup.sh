@@ -16,13 +16,12 @@ usage() {
 
 shopt -s globstar extglob nullglob 
 
-cd "${0%/*}"
+cd "${0%/*}" || exit 2 # Normalize working directory
 source constants.sh
-printf -v TIMESTAMP "$TIME_FORMAT" -1 
 LOG_FILE="/var/log/backup-sh/$TIMESTAMP.log"
 
 DRY_RUN=false
-TYPE=
+SERIES=
 
 sources=(
 	/home/jade/{.config,Scripts}
@@ -55,8 +54,7 @@ get-args() {
 		echo >&2 "Incompatible version of 'getopt', exiting..."; exit 2 
 	fi
 	
-	params="$(getopt -o dhs: -l dry-run,help,series: --name="$0" -- "$@")"
-	if (( $? != 0 )); then
+	if ! params="$(getopt -o dhs: -l dry-run,help,series: --name="$0" -- "$@")"; then
 		usage; exit 2
 	fi
 	
@@ -72,21 +70,29 @@ get-args() {
 	done
 }
 
-get-link-dest() {	
-	local -n link_dest_="$1"
+get-link-dest() {
+	# Usage: get-link-dest output-variable <folder-with-backups> [<series>]
+	# Find the most recent backup in a series
+	# If the series doesn't exist, leave the variable unset
+	# If it exists then set <link_dest_arg> to "--link-dest=<path-to-file>"
+	# Otherwise leave <link_dest_arg> unset
+	local -n link_dest_arg="$1"
 	local dest_parent="$2"
 	local series_backups
-	list-backups series_backups "$dest_parent" "$SERIES"
-
+	
+	list-backups series_backups "$dest_parent" "$SERIES" || exit 1
+		
 	if (( "${#series_backups[@]}" != 0 )); then
-		local dest_hostless="${dest_parent#*:}"
-		link_dest_="--link-dest=$dest_hostless/${series_backups[0]}"
+		local hostless_dest="${dest_parent#*:}"
+		local link_dest_arg="--link-dest='$hostless_dest/${series_backups[0]}'" 
+		echo "$link_dest_arg"
+	else
+		echo "--link-dest=<unset>"
 	fi
-	echo "link_dest=${link_dest_:-<unset>}"
 }
 
 sync-to-dest() {
-	echo "Backing up to '$1'${SERIES:+ with series \'$SERIES\'}"
+	echo "Backing up to '$1'${SERIES:+ with series '$SERIES'}"
 	
 	local dest_parent="$1"; shift
 	local dest="$dest_parent/${SERIES:+$SERIES.}$TIMESTAMP"
@@ -94,7 +100,7 @@ sync-to-dest() {
 	local passthru_args=( "$@" )
 	local link_dest
 	get-link-dest link_dest "$dest_parent"
-
+	
 	local dry_run=
 	if $DRY_RUN; then 
 		dry_run="--dry-run"

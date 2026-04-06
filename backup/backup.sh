@@ -81,13 +81,10 @@ get-link-dest() {
 	local series_backups
 	
 	list-backups series_backups "$dest_parent" "$SERIES" || exit 1
-		
+	
 	if (( "${#series_backups[@]}" != 0 )); then
 		local hostless_dest="${dest_parent#*:}"
-		local link_dest_arg="--link-dest='$hostless_dest/${series_backups[0]}'" 
-		echo "$link_dest_arg"
-	else
-		echo "--link-dest=<unset>"
+		link_dest_arg="--link-dest=$hostless_dest/${series_backups[0]}" 
 	fi
 }
 
@@ -98,9 +95,11 @@ sync-to-dest() {
 	local dest="$dest_parent/${SERIES:+$SERIES.}$TIMESTAMP"
 	
 	local passthru_args=( "$@" )
+	
 	local link_dest
 	get-link-dest link_dest "$dest_parent"
-	
+	echo "${link_dest:---link-dest=<unset>}"
+
 	local dry_run=
 	if $DRY_RUN; then 
 		dry_run="--dry-run"

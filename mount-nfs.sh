@@ -1,28 +1,22 @@
 #!/usr/bin/env bash
 
-NFS_IP="10.0.0.99"
+# Load env for nas
+. /home/jade/Scripts/envs/nas-paths.sh || exit 2
 
 is-nfs(){
 	[[ "$(stat --file-system --format=%T "$1")" == "nfs" ]]
 }
 
-mount-if-needed() {
-	local remote="$1"
-	local local="$2"
+HAS_FAILED=false
+NO_CHANGE=true
+for key in "${!NAS_MOUNT_PATHS[@]}"; do	
+	is-nfs "${NAS_MOUNT_PATHS[$key]}" && continue || NO_CHANGE=false
+	sudo mount -t nfs "${NAS_REMOTE_PATHS[$key]}" "${NAS_MOUNT_PATHS[$key]}" || HAS_FAILED=true
+done
 
-	is-nfs "$local" && echo 0 && return 0
-	sudo mount -t nfs "$remote" "$local"
-	echo $?
-}
-
-if $(is-nfs /mnt/jellyfin) && $(is-nfs /mnt/vanasa); then
+if $NO_CHANGE; then
 	exit 0
-fi
-
-JELLYFIN=$(mount-if-needed "$NFS_IP:/mnt/vdev1/Media" "/mnt/jellyfin")
-VANASA=$(mount-if-needed "$NFS_IP:/mnt/vdev1/Shared" "/mnt/vanasa")
-
-if (( VANASA != 0 )) || (( JELLYFIN != 0 )); then
+elif $HAS_FAILED; then
 	notify-send "🔴 Failed to mount NFS shares"
 else
 	notify-send "🟢 Mounted NFS shares"

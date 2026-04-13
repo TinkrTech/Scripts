@@ -35,7 +35,7 @@ filter-subtitle-files() {
 copy-and-chown() {
 	local src="$1"
 	local dest="$2"
-	local dest_dir="$(dirname "$2")"
+	local dest_dir; dest_dir="$(dirname "$2")"
 
     if $VERBOSE; then echo "'$src' -> '$dest'"; fi
 	if $DRY_RUN; then return 0; fi
@@ -58,7 +58,7 @@ get-show-folder(){
 	local partial_name="$1"
 	local results
 
-	readarray -t results <<< $(tv-tracker info "$partial_name" --fields "year" "title" --format="tsv")
+	readarray -t results <<< "$(tv-tracker info "$partial_name" --fields "year" "title" --format="tsv")"
 	if (( "${#results[@]}" == 0)); then
 		echo >&2 "Error: Expected to match '$partial_name' but didn't??. Aborting..."; exit 1
 	elif (( "${#results[@]}" > 1 )); then
@@ -67,7 +67,7 @@ get-show-folder(){
 	fi
 
 	#local year="$(echo "${results[0]}" | cut -f 1)"
-	local name="$(echo "${results[0]}" | cut -f 2)"
+	local name; name="$(echo "${results[0]}" | cut -f 2)"
 	echo "$name"
 }
 
@@ -77,7 +77,7 @@ process-show() {
 	local dest_path="/mnt/jellyfin/Shows"
 	local video_files=( )
 	
-	readarray -t video_files <<< $(filter-video-files "$src_path")
+	readarray -t video_files <<< "$(filter-video-files "$src_path")"
 	if (( "${#video_files[@]}" == 0 )); then
 		echo "WARNING: No video files were found..."
 	fi
@@ -87,7 +87,7 @@ process-show() {
 	track-show "$name"
 
 	declare -A episodes
-	readarray -t <<< $(tv-tracker fetch-episodes "$name" --name-only -q)
+	readarray -t <<< "$(tv-tracker fetch-episodes "$name" --name-only -q)"
 	for episode_name in "${MAPFILE[@]}"; do
 		[[ $episode_name =~ $EPISODE_PATTERN ]]
 		local s="${BASH_REMATCH[1]}"
@@ -120,9 +120,8 @@ parse-args() {
 		echo >&2 "Incompatible version of 'getopt', falling back to dmenu..."; exit 1
 	fi
 	
-	params="$(getopt -o t:n:qdh -l type:,name:,quiet,dry-run,--help --name "$0" -- "$@")"
-	
-	if (( $? != 0 )); then
+	local params
+	if ! params="$(getopt -o t:n:qdh -l type:,name:,quiet,dry-run,help --name "$0" -- "$@")"; then
 		usage; exit 2
 	fi
 	
@@ -155,7 +154,6 @@ parse-args() {
 				shift; break;;
 			esac
 	done
-	
 	ARGS=( "$@" ) # Return any remaining args (should be positional args)
 }
 
@@ -173,9 +171,8 @@ interactive-args() {
 	
 	# Todo: Introduce --interactive flag
 	if [[ "$INTERACTIVE" ]]; then
-		local mode=$(echo -e "Default\nDry-Run\nQuiet" | dmenu -l 3 -i -p "Select mode")
+		local mode; mode=$(echo -e "Default\nDry-Run\nQuiet" | dmenu -l 3 -i -p "Select mode")
 		[[ -n $mode ]] || exit 1
-	-d, --dry-run		Show what will happen without causing changes. Overrides -q/--q
 		case "$mode" in
 			Default)
 				DRY_RUN=false;
@@ -196,6 +193,7 @@ main() {
 	if [[ -z "$src_path" ]]; then
 		echo >&2 "Invalid source path. (Was either empty or /)"; exit 2
 	fi
+
 	if $VERBOSE; then
 		echo "Uploading $MEDIA_TYPE '$MEDIA_NAME' from '$src_path'"
 		echo "dry-run=$DRY_RUN"
@@ -215,12 +213,11 @@ if [[ -z "${1%%+(/)}" ]]; then
 fi
 
 
-
 parse-args "$@" || exit $?
 if (( ${#ARGS[@]} != 1 )); then
-	echo >&2 "Expected 1 positional arg got ${#ARGS[@]}. Args were: ${ARGS[@]}"
+	echo >&2 "Expected 1 positional arg got ${#ARGS[@]}. Args were: ${ARGS[*]}"
 	echo
 	usage; exit 2
 fi
 interactive-args || exit $?
-main "$ARGS"
+main "${ARGS[@]}"
